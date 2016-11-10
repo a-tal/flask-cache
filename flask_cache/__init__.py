@@ -9,9 +9,6 @@
     :license: BSD, see LICENSE for more details
 """
 
-__version__ = '0.13'
-__versionfull__ = __version__
-
 import base64
 import functools
 import hashlib
@@ -25,6 +22,9 @@ from werkzeug import import_string
 from flask import request, current_app
 
 from ._compat import PY2
+
+__version__ = '0.14'
+__versionfull__ = __version__
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,4 @@
+import time
 import pickle
 from werkzeug.contrib.cache import (BaseCache, NullCache, SimpleCache, MemcachedCache,
                                     GAEMemcachedCache, FileSystemCache)
@@ -20,6 +21,131 @@ class SASLMemcachedCache(MemcachedCache):
                                       binary=True)
 
         self.key_prefix = key_prefix
+
+
+class CassandraCache(BaseCache):
+    def __init__(self, nodes=None, port=9042, keyspace="flask_cache",
+                 table="flask_cache", default_timeout=None,
+                 replication_factor=1):
+        self.nodes = nodes or []
+        self.port = port
+        self.keyspace = keyspace
+        self.table = table
+        self.default_timeout = default_timeout
+        self.cluster = Cluster(self.nodes, port=self.port)
+        self.cluster.connect().execute(
+            """
+            CREATE KEYSPACE IF NOT EXISTS {keyspace} WITH replication =
+            {{'class': 'SimpleStrategy', 'replication_factor': {factor}}}
+            """.format(keyspace=self.keyspace, factor=replication_factor)
+        )
+        self.session = self.cluster.connect(keyspace=keyspace)
+        self._create_table()
+
+    def _create_table(self):
+        self.session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS {table} (
+                key text PRIMARY KEY,
+                value blob,
+                expires float,
+            )
+            """.format(table=self.table)
+        )
+
+    def add(self, key, value, timeout=None):
+        if self.has(key):
+            return False
+
+        timeout = timeout or self.default_timeout
+
+        expires = None
+        if timeout not in (None, 0):
+            expires = time.time() + int(timeout)
+        self.session.execute(
+            """
+            INSERT INTO {table} (key, value, expires) VALUES
+            (%(key)s, %(value)s, %(expires)s)
+            """.format(table=self.table),
+            {"key": key, "value": value, "expires": expires}
+        )
+
+    def clear(self):
+        self.session.execute("DROP TABLE {}".format(self.table))
+        self._create_table()
+
+    def dec(self, key, delta=1):
+        self.session.execute(
+            """
+            UPDATE {table} SET value = value - %(delta)d WHERE key = %(key)s
+            """.format(table=self.table),
+            {"key": key, "delta": delta}
+        )
+
+    def delete(self, key):
+        self.session.execute(
+            """
+            DELETE FROM {table} WHERE key = %(key)s
+            """.format(table=self.table),
+            {"key": key},
+        )
+
+    def get(self, key):
+        rows = self.session.execute(
+            """
+            SELECT value, expires FROM {table} WHERE key = %(key)s LIMIT 1
+            """.format(table=self.table),
+            {"key": key}
+        )
+        for (value, expires) in rows:
+            if expires:
+                if time.time() < expires:
+                    return pickle.loads(value)
+                else:
+                    self.delete(key)
+                    return
+            else:
+                return pickle.loads(value)
+
+    def has(self, key):
+        rows = self.session.execute(
+            """
+            SELECT value, expires FROM {table} WHERE key = %(key)s LIMIT 1
+            """.format(table=self.table),
+            {"key": key}
+        )
+        for (value, expires) in rows:
+            if expires:
+                if time.time() < expires:
+                    return True
+                else:
+                    self.delete(key)
+                    return False
+            else:
+                return True
+
+        return False
+
+    def inc(self, key, delta=1):
+        self.session.execute(
+            """
+            UPDATE {table} SET value = value + %(delta)d WHERE key = %(key)s
+            """.format(table=self.table),
+            {"key": key, "delta": delta}
+        )
+
+    def set(self, key, value, timeout=None):
+        timeout = timeout or self.default_timeout
+        expires = None
+        if timeout not in (None, 0):
+            expires = time.time() + int(timeout)
+        self.session.execute(
+            """
+            INSERT INTO {table} (key, value, expires) VALUES
+            (%(key)s, %(value)s, %(expires)s)
+            """.format(table=self.table),
+            {"key": key, "value": pickle.dumps(value), "expires": expires}
+        )
 
 
 def null(app, config, args, kwargs):
@@ -82,6 +208,33 @@ else:
                             )
 
         return RedisCache(*args, **kwargs)
+
+
+# Cassandra cache introduced in flask-cache 0.14
+try:
+    from cassandra.cluster import Cluster
+except ImportError:
+    pass
+else:
+    def cassandra(app, config, args, kwargs):
+        kwargs.update(dict(
+            nodes=config.get('CACHE_CASSANDRA_NODES', ["localhost"]),
+            port=config.get('CACHE_CASSANDRA_PORT', 9042),
+        ))
+
+        table = config.get('CACHE_CASSANDRA_TABLE')
+        if table:
+            kwargs['table'] = table
+
+        keyspace = config.get('CACHE_CASSANDRA_KEYSPACE')
+        if keyspace:
+            kwargs['keyspace'] = keyspace
+
+        replication_factor = config.get('CACHE_CASSANDRA_REPLICATION_FACTOR')
+        if replication_factor:
+            kwargs['replication_factor'] = replication_factor
+
+        return CassandraCache(*args, **kwargs)
 
 
 class SpreadSASLMemcachedCache(SASLMemcachedCache):

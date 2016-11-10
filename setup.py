@@ -11,7 +11,7 @@ from setuptools import setup
 
 setup(
     name='Flask-Cache',
-    version='0.13',
+    version='0.14',
     url='http://github.com/thadeusb/flask-cache',
     license='BSD',
     author='Thadeus Burgess',

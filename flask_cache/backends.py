@@ -1,4 +1,3 @@
-import time
 import pickle
 from werkzeug.contrib.cache import (BaseCache, NullCache, SimpleCache, MemcachedCache,
                                     GAEMemcachedCache, FileSystemCache)
@@ -48,7 +47,6 @@ class CassandraCache(BaseCache):
             CREATE TABLE IF NOT EXISTS {table} (
                 key text PRIMARY KEY,
                 value blob,
-                expires float,
             )
             """.format(table=self.table)
         )
@@ -59,16 +57,21 @@ class CassandraCache(BaseCache):
 
         timeout = timeout or self.default_timeout
 
-        expires = None
-        if timeout not in (None, 0):
-            expires = time.time() + int(timeout)
-        self.session.execute(
-            """
-            INSERT INTO {table} (key, value, expires) VALUES
-            (%(key)s, %(value)s, %(expires)s)
-            """.format(table=self.table),
-            {"key": key, "value": value, "expires": expires}
-        )
+        if timeout:
+            self.session.execute(
+                """
+                INSERT INTO {table} (key, value) VALUES (%(key)s, %(value)s)
+                USING TTL {timeout}
+                """.format(table=self.table, timeout=timeout),
+                {"key": key, "value": value}
+            )
+        else:
+            self.session.execute(
+                """
+                INSERT INTO {table} (key, value) VALUES (%(key)s, %(value)s)
+                """.format(table=self.table),
+                {"key": key, "value": value}
+            )
 
     def clear(self):
         self.session.execute("DROP TABLE {}".format(self.table))
@@ -93,36 +96,22 @@ class CassandraCache(BaseCache):
     def get(self, key):
         rows = self.session.execute(
             """
-            SELECT value, expires FROM {table} WHERE key = %(key)s LIMIT 1
+            SELECT value FROM {table} WHERE key = %(key)s LIMIT 1
             """.format(table=self.table),
             {"key": key}
         )
-        for (value, expires) in rows:
-            if expires:
-                if time.time() < expires:
-                    return pickle.loads(value)
-                else:
-                    self.delete(key)
-                    return
-            else:
-                return pickle.loads(value)
+        for value in rows:
+            return pickle.loads(value.value)
 
     def has(self, key):
         rows = self.session.execute(
             """
-            SELECT value, expires FROM {table} WHERE key = %(key)s LIMIT 1
+            SELECT value FROM {table} WHERE key = %(key)s LIMIT 1
             """.format(table=self.table),
             {"key": key}
         )
-        for (value, expires) in rows:
-            if expires:
-                if time.time() < expires:
-                    return True
-                else:
-                    self.delete(key)
-                    return False
-            else:
-                return True
+        for value in rows:
+            return True
 
         return False
 
@@ -136,16 +125,21 @@ class CassandraCache(BaseCache):
 
     def set(self, key, value, timeout=None):
         timeout = timeout or self.default_timeout
-        expires = None
-        if timeout not in (None, 0):
-            expires = time.time() + int(timeout)
-        self.session.execute(
-            """
-            INSERT INTO {table} (key, value, expires) VALUES
-            (%(key)s, %(value)s, %(expires)s)
-            """.format(table=self.table),
-            {"key": key, "value": pickle.dumps(value), "expires": expires}
-        )
+        if timeout:
+            self.session.execute(
+                """
+                INSERT INTO {table} (key, value) VALUES (%(key)s, %(value)s)
+                USING TTL {timeout}
+                """.format(table=self.table, timeout=timeout),
+                {"key": key, "value": pickle.dumps(value)}
+            )
+        else:
+            self.session.execute(
+                """
+                INSERT INTO {table} (key, value) VALUES (%(key)s, %(value)s)
+                """.format(table=self.table),
+                {"key": key, "value": pickle.dumps(value)}
+            )
 
 
 def null(app, config, args, kwargs):

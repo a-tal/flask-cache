@@ -17,3 +17,11 @@ The following config keys are available:
 * `CACHE_CASSANDRA_KEYSPACE`: string keyspace to use in Cassandra (default: "flask_cache")
 
 * `CACHE_CASSANDRA_REPLICATION_FACTOR`: integer [replication factor](https://cassandra.apache.org/doc/latest/architecture/dynamo.html#replication-strategy) to use (default: 1)
+
+* `CACHE_CASSANDRA_READ_CONSISTENCY`: integer [ConsistencyLevel](https://datastax.github.io/python-driver/api/cassandra.html#cassandra.ConsistencyLevel) to use for reads (default: 1)
+
+* `CACHE_CASSANDRA_WRITE_CONSISTENCY`: integer [ConsistencyLevel](https://datastax.github.io/python-driver/api/cassandra.html#cassandra.ConsistencyLevel) to use for writes (default: 0)
+
+* `CACHE_CASSANDRA_DELETE_CONSISTENCY`: integer [ConsistencyLevel](https://datastax.github.io/python-driver/api/cassandra.html#cassandra.ConsistencyLevel) to use for deletes (default: 0)
+
+* `CACHE_CASSANDRA_TABLE_CONSISTENCY`: integer [ConsistencyLevel](https://datastax.github.io/python-driver/api/cassandra.html#cassandra.ConsistencyLevel) to use for table modifications (default: 6)

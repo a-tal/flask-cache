@@ -225,7 +225,7 @@ else:
             kwargs['keyspace'] = keyspace
 
         replication_factor = config.get('CACHE_CASSANDRA_REPLICATION_FACTOR')
-        if replication_factor:
+        if replication_factor is not None:
             kwargs['replication_factor'] = replication_factor
 
         return CassandraCache(*args, **kwargs)

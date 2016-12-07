@@ -12,7 +12,7 @@ from setuptools import setup
 
 setup(
     name='Flask-Cache-Cassandra',
-    version='0.14',
+    version='0.14.1',
     url='http://github.com/a-tal/flask-cache-cassandra',
     license='BSD',
     author='Thadeus Burgess',

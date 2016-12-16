@@ -1,7 +1,7 @@
 import pickle
 from werkzeug.contrib.cache import (BaseCache, NullCache, SimpleCache, MemcachedCache,
                                     GAEMemcachedCache, FileSystemCache)
-from ._compat import range_type
+from ._compat import range_type, PY2
 
 
 class SASLMemcachedCache(MemcachedCache):
@@ -20,6 +20,14 @@ class SASLMemcachedCache(MemcachedCache):
                                       binary=True)
 
         self.key_prefix = key_prefix
+
+
+if PY2:
+    def dumper(value):
+        return bytearray(pickle.dumps(value))
+else:
+    def dumper(value):
+        return pickle.dumps(value)
 
 
 class CassandraCache(BaseCache):
@@ -262,7 +270,7 @@ class CassandraCache(BaseCache):
                 USING TTL {timeout}
                 """.format(table=self.table, timeout=timeout),
                 consistency,
-                {"key": key, "value": pickle.dumps(value)}
+                {"key": key, "value": dumper(value)}
             )
         else:
             success = self._execute(
@@ -270,7 +278,7 @@ class CassandraCache(BaseCache):
                 INSERT INTO {table} (key, value) VALUES (%(key)s, %(value)s)
                 """.format(table=self.table),
                 consistency,
-                {"key": key, "value": pickle.dumps(value)}
+                {"key": key, "value": dumper(value)}
             )
 
         return success

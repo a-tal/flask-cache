@@ -50,6 +50,14 @@ class CassandraCache(BaseCache):
         ValueError if the keyspace or table are not valid names
     """
 
+    _clusters = {}
+
+    @staticmethod
+    def _cluster(nodes, port):
+        if (nodes, port) not in CassandraCache._clusters:
+            CassandraCache._clusters[(nodes, port)] = Cluster(nodes, port=port)
+        return CassandraCache._clusters[(nodes, port)]
+
     def __init__(self, nodes=None, port=None, keyspace=None,
                  table=None, default_timeout=None,
                  replication_factor=1, read_consistency=1,
@@ -64,7 +72,7 @@ class CassandraCache(BaseCache):
                 if char in name:
                     raise ValueError("'{}' not valid in {}".format(char, name))
 
-        self.nodes = nodes or ["localhost"]
+        self.nodes = tuple(nodes or ["localhost"])
         self.port = port or 9042
         self.default_timeout = default_timeout
         self.read_consistency = read_consistency
@@ -72,7 +80,7 @@ class CassandraCache(BaseCache):
         self.delete_consistency = delete_consistency
         self.table_consistency = table_consistency
 
-        self.cluster = Cluster(self.nodes, port=self.port)
+        self.cluster = CassandraCache._cluster(self.nodes, self.port)
         self.cluster.connect().execute(
             """
             CREATE KEYSPACE IF NOT EXISTS {keyspace} WITH replication =

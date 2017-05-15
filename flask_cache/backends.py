@@ -1,4 +1,5 @@
 import pickle
+import logging
 from werkzeug.contrib.cache import (BaseCache, NullCache, SimpleCache, MemcachedCache,
                                     GAEMemcachedCache, FileSystemCache)
 from ._compat import range_type, PY2
@@ -86,7 +87,7 @@ class CassandraCache(BaseCache):
             CREATE KEYSPACE IF NOT EXISTS {keyspace} WITH replication =
             {{'class': 'SimpleStrategy', 'replication_factor': {factor}}}
             """.format(keyspace=self.keyspace, factor=replication_factor)
-        )
+        ).response_future.result()
         self.session = self.cluster.connect(keyspace=self.keyspace)
         self._create_table()
 
@@ -101,13 +102,14 @@ class CassandraCache(BaseCache):
             results: boolean to return the cassandra.cluster.ResultSet as well
         """
 
-        res = self.session.execute(
+        res = self.session.execute_async(
             SimpleStatement(statement, consistency_level=consistency),
             parameters=parameters,
         )
         try:
-            res.response_future.result()  # force this thread to wait
-        except:
+            res = res.result()  # force this thread to wait
+        except Exception as error:
+            logging.warning(error)
             success = False
         else:
             success = True
@@ -153,18 +155,15 @@ class CassandraCache(BaseCache):
             return self.set(key, value, timeout, consistency)
 
     def clear(self, consistency=None):
-        """Clears the cache by dropping the table and recreating it."""
+        """Clears the cache by truncating the table."""
 
         if consistency is None:
             consistency = self.table_consistency
 
-        success = self._execute(
-            "DROP TABLE {}".format(self.table),
+        return self._execute(
+            "TRUNCATE TABLE {}".format(self.table),
             consistency,
         )
-        if success:
-            success = self._create_table(consistency)
-        return success
 
     def dec(self, key, delta=1):
         """Decrement a counter in the cache, by delta."""
